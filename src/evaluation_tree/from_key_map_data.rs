@@ -8,7 +8,7 @@ use super::command_execution::{FunctionOrCommandName};
 use super::when_expression::Condition;
 use crate::environment::function_names;
 
-pub(crate) fn try_into_evaluation_tree<K: Key, F: Function>(raw: KeyMapData) -> Result<EvaluationTree<KeyCode, F>, String> {
+pub(crate) fn try_into_evaluation_tree<K: Key, F: Function>(raw: KeyMapData) -> Result<EvaluationTree<K, F>, String> {
   let mut tree = EvaluationTree::new();
   tree.commands = try_into_commands::<F>(raw.commands)?;
 
@@ -18,16 +18,15 @@ pub(crate) fn try_into_evaluation_tree<K: Key, F: Function>(raw: KeyMapData) -> 
       KeyMapNode::new_command(CommandName::from(raw_key_map.command)),
       |key_map_node, raw_key| {
         let mut outer_key_map_node = KeyMapNode::new();
-        outer_key_map_node.add(KeyCode::from(raw_key.to_owned()), key_map_node);
+        outer_key_map_node.add(K::from(raw_key.to_owned()), key_map_node);
         outer_key_map_node
       });
 
     for mode in raw_key_map.mode {
       {
-        let this = &mut tree;
         let mode = Mode::from(mode);
         let key_map_node = node.clone();
-        this.tree.insert(mode, key_map_node);
+        tree.add(mode, key_map_node);
       };
     }
 

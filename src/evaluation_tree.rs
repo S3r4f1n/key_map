@@ -37,21 +37,20 @@ impl From<String> for Mode {
 
 #[derive(Debug)]
 pub struct EvaluationTree<K: Key, F: Function> {
-  tree: HashMap<Mode, KeyMapNode<KeyCode>>,
+  tree: HashMap<Mode, KeyMapNode<K>>,
   commands: HashMap<String, Command<F>>,
-  some: (K,F)
 }
 
 impl<K: Key, F: Function> EvaluationTree<K, F> {
   fn new() -> Self {
-    Self { tree: HashMap::new(), commands: HashMap::new() , some: (K::from("some"), F::from("some")) }
+    Self { tree: HashMap::new(), commands: HashMap::new()}
   }
 
-  fn add(&mut self, mode: Mode, key_map_node: KeyMapNode<KeyCode>) {
+  fn add(&mut self, mode: Mode, key_map_node: KeyMapNode<K>) {
     self.tree.insert(mode, key_map_node);
   }
 
-  pub fn evaluate(&self, mode: &Mode, keys: &[KeyCode]) -> Result<Vec<&F>, String>{
+  pub fn evaluate(&self, mode: &Mode, keys: &[K]) -> Result<Vec<&F>, String>{
     let name = self.tree.get(mode).ok_or(format!("mode should have some keybindings: {mode:?} has none"))?.evaluate(keys)?;
     let command = self.commands.get(name).ok_or(format!("command not found: {name}"))?;
     let functions = command.execute(&self.commands);

@@ -27,7 +27,7 @@ mod environment;
 use std::path::Path;
 
 use file_reader::key_map_data_from_path;
-use evaluation_tree::{EvaluationTree, Mode, KeyCode, FunctionString};
+use evaluation_tree::{EvaluationTree, KeyCode, FunctionString};
 use evaluation_tree::from_key_map_data::try_into_evaluation_tree;
 use environment::mode;
 
@@ -35,21 +35,20 @@ pub trait Key: From<&'static str> + From<String> + Clone + std::fmt::Debug + std
 pub trait Function: From<&'static str> + From<String> + Eq{ }
 pub struct KeyParser<K: Key, F: Function> {
     json_path: String,
-    evaluation_tree: Option<EvaluationTree<KeyCode, F>>,
-    some: (K, F)
+    evaluation_tree: Option<EvaluationTree<K, F>>,
     // potential options
 }
 
-impl<F: Function> KeyParser<KeyCode, F> {
+impl<K: Key, F: Function> KeyParser<K, F> {
     pub fn new(json_path: String) -> Self {
-        Self { json_path, evaluation_tree: None, some: (KeyCode::from ("some"), F::from ("some")) }
+        Self { json_path, evaluation_tree: None}
     }
     pub fn init(&mut self) -> Result<(), String>{
         //code got hella ugly but interface should ok.
-        self.evaluation_tree = Some(try_into_evaluation_tree::<KeyCode, F>(key_map_data_from_path(Path::new(&self.json_path))).unwrap());
+        self.evaluation_tree = Some(try_into_evaluation_tree::<K, F>(key_map_data_from_path(Path::new(&self.json_path))).unwrap());
         Ok(())
     }
-    pub fn pares_input(&self, keys: &[KeyCode]) -> Result<Vec<&F>, String> {
+    pub fn pares_input(&self, keys: &[K]) -> Result<Vec<&F>, String> {
         if let Some(et) = &self.evaluation_tree {
             et.evaluate(&mode(), keys)
         } else {
