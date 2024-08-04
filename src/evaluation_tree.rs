@@ -4,7 +4,8 @@ pub(crate) mod from_key_map_data;
 
 use std::{collections::HashMap, fmt::format};
 use command_execution::{Command, CommandName};
-use crate::{environment::{self, EnvMode, EnvVariables, Environment}, types::{FunctionString, KeyCode, Mode}, Function, Key};
+use crate::{environment::{self, EnvMode, EnvVariables}, types::{FunctionString, KeyCode, Mode}, Function, Key};
+use crate::Environment;
 
 
 #[derive(Debug)]

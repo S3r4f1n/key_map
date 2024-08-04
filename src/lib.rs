@@ -1,30 +1,46 @@
-// key maps is a simple lib which enables key mappings.
-// at the core it maps (chains of) key codes into "command" strings which can be matched onto functions
-// these functions are provided
-// parse_wait(string) this pareses an input key code 
-// enter() this executes the associated command
-// modes: manual, enter has to be called to execute the parsing
-//        auto(ms), the command is executed directly if single command or after a delay if key code chain is possible.
-
-// the key maps are configured in two stages. There are command groups and commands. And key maps.
-// a command consists of a when expression and a command string, command or command group or a list of commands which will be executed in sequence.
-// a command group consists of several commands, usually only one command should have a when expression evaluating to true
-
-// each key combination can only be mapped to one command or command group.
-// multi mapping is therefore created in two steps create a mapping two a group and add several commands to the group. Enabling easier remapping.
-
-// key maps and commands are stored in json files.
-
-
-// todo 
-// has_next
-// has_command
-// threading and delay
+//! key maps is a simple lib which enables key mappings. From keys onto functions.  
+//!
+//! **Features:**
+//! - configure keybindings with json files
+//! - split json into several files in a folder and sub folders
+//! - supports when expressions which "lookup" values in the environment
+//! - supports chained key inputs e.g. [\<c-k\>, \<c-c\>]  
+//!
+//! **Design:**  
+//! - Types are kept as traits to allow for loose coupling. E.g. the keys have to implement the Key trait. Which mainly consists of a conversion from string to key and hashing.
+//! - Only one struct is part of the API - KeyParser. which ships with a default. Ready to use.
+//! - Traits have default implementations.
+//! - KeyParser.env contains all environment related functions. Setting valid functions, mode and EnvVariables.
+//! - evaluate key sequences directly or key_by_key
+//! - the KeyParser has to be initialized with a json path.  
+//! 
+//! **Json Structure, Mapping Philosophy:**
+//! The central idea is to map keys combinations onto functions. Key combinations are pressed by the use and functions are provided by the software. This lib maps one onto the other.  
+//! Between the two, commands are used as an abstraction for the mappings.  
+//! - **A Commands** contains a when expression and a list of commands and functions. When a command is called the when expression is evaluated. If true the list of commands and functions is "called". The result of such a call will be a list of functions which should be executed in sequence.
+//! - **A KeyMap** contains a list of Keys, a Mode, and single command. Most software won't make use of the Mode, but this lib was designed keeping modal editors in mind. The list of keys translates to the sequence of keys which need to be pressed to execute the command. Further only **One** command can be called by a key map. If several commands should be called by a key map, use a command as abstraction to call them all. This is deliberately chosen to facilitate rebinding of keys. E.g. mapping tab onto to will be easy since tab only calls one command.
+//!
+//! **Remark** this is still some work in progress bugs are likely to appear.  
+//! **Usage**
+//! ```
+//! use logical_expr::Context; // external crate for expression parsing.
+//! use key_maps::{KeyParser, environment::{EnvFunctions, EnvMode, EnvVariables}};
+//!
+//! let mut key_parser = KeyParser::default();
+//! key_parser.set_path("path/to/json/folder");
+//! key_parser.env.set_functions(vec![Function::from("function_one"), Function::from("function_two")]); //list of all supported functions
+//! key_parser.env.set_mode(Mode::from("Normal")); // default mode
+//! key_parser.env.set_variables(Context::new());  // used for when expressions.
+//! key_parser.init(); // parsing the json
+//!
+//! let function_list = key_parser.parse_key_sequences(vec!["<c-k>", "<c-c>"]).unwrap(); // parsing key sequences
+//! ```
+////////////////////////////////////////////////////////////////////////////////////////////////////
 
 mod evaluation_tree;
 mod json_parser;
-mod environment;
-mod types;
+pub mod environment;
+pub mod types;
 
 use std::path::Path;
 
@@ -32,8 +48,7 @@ use json_parser::key_map_data_from_path;
 use evaluation_tree::{EvaluationTree};
 use evaluation_tree::from_key_map_data::try_into_evaluation_tree;
 use types::{FunctionString, KeyCode, Mode};
-use environment::{DefaultEnvironment, Environment};
-
+use environment::{DefaultEnvironment, EnvFunctions, EnvMode, EnvVariables, Environment};
 pub trait Key: From<&'static str> + From<String> + Clone + std::fmt::Debug + std::hash::Hash + Eq { }
 pub trait Function: From<&'static str> + From<String> + Eq + std::fmt::Display{ }
 pub struct KeyParser<M: Key, K: Key, F: Function, E: Environment<M, F>> {
@@ -44,13 +59,19 @@ pub struct KeyParser<M: Key, K: Key, F: Function, E: Environment<M, F>> {
 
 impl<K: Key> Default for KeyParser<Mode, K, FunctionString, DefaultEnvironment> {
     fn default() -> Self {
-        Self::new("src/key_maps".to_string(), DefaultEnvironment::new())
+        Self::new("key_maps".to_string(), DefaultEnvironment::new())
     }
 }
 
 impl<M: Key, K: Key, F: Function, E: Environment<M, F>> KeyParser<M, K, F, E> {
     pub fn new(json_path: String, environment: E) -> Self {
         Self { json_path, evaluation_tree: None , env: environment }
+    }
+    pub fn set_path(&mut self, json_path: String) {
+        self.json_path = json_path
+    }
+    pub fn get_path(&mut self) -> String {
+        self.json_path.clone()
     }
     pub fn init(&mut self) -> Result<(), String>{
         self.evaluation_tree = Some(

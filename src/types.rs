@@ -2,8 +2,8 @@ use std::fmt::Display;
 
 use crate::{Function, Key};
 
-// this is the type used for modes, since it also acts as a Key it has to implement Key
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
+/// this is the default type used for modes, since it also acts as a Key it has to implement Key
 pub struct Mode(String);
 impl Key for Mode {}
 impl From<& str> for Mode {
@@ -17,8 +17,8 @@ impl From<String> for Mode {
     }
 }
 
-// these types are here to help get started, but can be replaced by any type implementing Key/Function
 #[derive(PartialEq, Eq, Debug)]
+/// these types are here to help get started, but can be replaced by any type implementing Key/Function
 pub struct FunctionString(String);
 impl Function for FunctionString {}
 impl Display for FunctionString {
@@ -37,6 +37,7 @@ impl From<String> for FunctionString {
     }
 }
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
+/// these types are here to help get started, but can be replaced by any type implementing Key/Function
 pub struct KeyCode(String);
 impl Key for KeyCode {}
 impl From<& str> for KeyCode {

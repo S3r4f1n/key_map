@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use command_execution::CommandName;
 use environment::EnvFunctions;
 
-use crate::environment::Environment;
+use crate::Environment;
 use crate::json_parser::{self, KeyMapData, CommandType};
 use super::*;
 use super::command_execution::{FunctionOrCommandName};
