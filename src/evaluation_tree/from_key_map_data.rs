@@ -1,48 +1,39 @@
 use std::collections::HashMap;
 
 use command_execution::CommandName;
+use environment::EnvFunctions;
 
-use crate::file_reader::{self, KeyMapData, CommandType};
+use crate::environment::Environment;
+use crate::json_parser::{self, KeyMapData, CommandType};
 use super::*;
 use super::command_execution::{FunctionOrCommandName};
 use super::when_expression::Condition;
-use crate::environment::function_names;
 
-pub(crate) fn try_into_evaluation_tree<K: Key, F: Function>(raw: KeyMapData) -> Result<EvaluationTree<K, F>, String> {
+pub(crate) fn try_into_evaluation_tree<M: Key, K: Key, F: Function, E: Environment<M, F>>(raw: KeyMapData, environment: &E) -> Result<EvaluationTree<M, K, F>, String> {
   let mut tree = EvaluationTree::new();
-  tree.commands = try_into_commands::<F>(raw.commands)?;
+  tree.commands = try_into_commands::<F, E>(raw.commands, &environment)?;
 
   for raw_key_map in raw.key_maps {
-
-    let node = raw_key_map.keys.iter().fold(
-      KeyMapNode::new_command(CommandName::from(raw_key_map.command)),
-      |key_map_node, raw_key| {
-        let mut outer_key_map_node = KeyMapNode::new();
-        outer_key_map_node.add(K::from(raw_key.to_owned()), key_map_node);
-        outer_key_map_node
-      });
-
+    println!("mode: {raw_key_map:?}");
     for mode in raw_key_map.mode {
-      {
-        let mode = Mode::from(mode);
-        let key_map_node = node.clone();
-        tree.add(mode, key_map_node);
-      };
+      tree.tree.entry(M::from(mode))
+      .and_modify(|node| node.insert_raw_data(&raw_key_map.keys, &raw_key_map.command))
+      .or_insert({let mut n = KeyMapNode::new();
+        n.insert_raw_data(&raw_key_map.keys, &raw_key_map.command);
+        n});
     }
-
   }
 
   Ok(tree)
 }
 
 
-fn try_into_commands<F: Function>(raw_commands:Vec<file_reader::Command>) -> Result<HashMap<String, Command<F>>, String> {
+fn try_into_commands<F: Function, E: EnvFunctions<F>>(raw_commands:Vec<json_parser::Command>, environment: &E) -> Result<HashMap<String, Command<F>>, String> {
     let raw_command_names: Vec<CommandName> = raw_commands.iter().map(|c| CommandName::from(&c.name)).collect();
-    let function_names = function_names::<F>();
     let mut commands: HashMap<String, Command<F>> = HashMap::new();
 
     for raw_command in &raw_commands{
-      let (command, errors) = raw_command_to_command::<F>(raw_command, &raw_command_names, &function_names);
+      let (command, errors) = raw_command_to_command::<F, E>(raw_command, &raw_command_names, environment);
       if commands.insert(raw_command.name.to_owned(), command).is_some() {
         return Err(format!("duplicate command name: {}", raw_command.name));
       };
@@ -53,12 +44,12 @@ fn try_into_commands<F: Function>(raw_commands:Vec<file_reader::Command>) -> Res
     Ok(commands)
   }
 
-fn raw_command_to_command<F: Function>(raw_command: &file_reader::Command, raw_command_names: &Vec<CommandName>, function_names: &Vec<F>) -> (Command<F>, Vec<String>) {
+fn raw_command_to_command<F: Function, E: EnvFunctions<F>>(raw_command: &json_parser::Command, raw_command_names: &Vec<CommandName>, env_functions: &E) -> (Command<F>, Vec<String>) {
   let mut errors = Vec::new();
   match raw_command.command_type {
     CommandType::FunctionSequence => {
       (Command::new(
-        raw_command.commands.iter().map(|f| {if !function_names.contains(&F::from(f.to_owned())) {errors.push(format!("function not found: {}", f))};
+        raw_command.commands.iter().map(|f| {if !env_functions.is_function(f) {errors.push(format!("function not found: {}", f))};
           FunctionOrCommandName::Function(F::from(f.to_owned()))}).collect(),
         Condition::new(&raw_command.when)),
       errors)
@@ -75,7 +66,7 @@ fn raw_command_to_command<F: Function>(raw_command: &file_reader::Command, raw_c
         if raw_command_names.contains(c) {
           FunctionOrCommandName::CommandName(CommandName::from(c))
         } else {
-          if !function_names.contains(&F::from(c.to_owned())) {errors.push(format!("function not found: {}", c))};
+          if !env_functions.is_function(c) {errors.push(format!("function not found: {}", c))};
           FunctionOrCommandName::Function(F::from(c.to_owned()))
         }
       ).collect(),

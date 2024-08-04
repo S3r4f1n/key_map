@@ -2,64 +2,83 @@ pub(crate) mod command_execution;
 pub(crate) mod when_expression;
 pub(crate) mod from_key_map_data;
 
-use std::{collections::HashMap};
+use std::{collections::HashMap, fmt::format};
 use command_execution::{Command, CommandName};
-use crate::{Function, Key};
+use crate::{environment::{self, EnvMode, EnvVariables, Environment}, types::{FunctionString, KeyCode, Mode}, Function, Key};
 
-pub type FunctionString = String;
-impl Function for FunctionString {}
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct KeyCode(String);
-impl Key for KeyCode {}
-impl From<& str> for KeyCode {
-    fn from(s: & str) -> Self {
-        KeyCode(s.to_string())
-    }
-}
-impl From<String> for KeyCode {
-    fn from(s: String) -> Self {
-        KeyCode(s.to_string())
-    }
-}
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct Mode(String);
-impl Key for Mode {}
-impl From<& str> for Mode {
-    fn from(s: & str) -> Self {
-        Mode(s.to_string())
-    }
-}
-impl From<String> for Mode {
-    fn from(s: String) -> Self {
-        Mode(s.to_string())
-    }
-}
 
 #[derive(Debug)]
-pub struct EvaluationTree<K: Key, F: Function> {
-  tree: HashMap<Mode, KeyMapNode<K>>,
+pub struct EvaluationTree<M: Key, K: Key, F: Function> {
+  tree: HashMap<M, KeyMapNode<K>>,
   commands: HashMap<String, Command<F>>,
+  pressed: Vec<K>,
+  current_node: Option<KeyMapNode<K>>,
 }
 
-impl<K: Key, F: Function> EvaluationTree<K, F> {
+impl<M: Key, K: Key, F: Function> EvaluationTree<M, K, F> {
   fn new() -> Self {
-    Self { tree: HashMap::new(), commands: HashMap::new()}
+    Self { tree: HashMap::new(), commands: HashMap::new(), pressed: Vec::new(), current_node: None }
   }
 
-  fn add(&mut self, mode: Mode, key_map_node: KeyMapNode<K>) {
+  fn add(&mut self, mode: M, key_map_node: KeyMapNode<K>) {
     self.tree.insert(mode, key_map_node);
   }
 
-  pub fn evaluate(&self, mode: &Mode, keys: &[K]) -> Result<Vec<&F>, String>{
+  pub fn evaluate<E: Environment<M, F>>(&self, keys: &[K], environment: &E) -> Result<Vec<&F>, String>{
+    let mode = &environment.get_mode();
     let name = self.tree.get(mode).ok_or(format!("mode should have some keybindings: {mode:?} has none"))?.evaluate(keys)?;
+    self.get_functions(name, environment)
+  }
+
+  fn get_functions<E: EnvVariables>(&self, name: &str, environment: &E) -> Result<Vec<&F>, String>{
     let command = self.commands.get(name).ok_or(format!("command not found: {name}"))?;
-    let functions = command.execute(&self.commands);
+    let functions = command.execute(&self.commands, environment);
     if functions.len() == 0 {
       Err(format!("No functions found for command: {name}"))
     } else {
       Ok(functions)
     }
   }
+  
+  pub fn has_next<E: EnvMode<M>>(&self, key: &K, environment: &E) -> bool {
+    if let Some(ref node) = self.current_node{
+      node.get_next(key).is_some()
+    } else if let Some(node) = self.tree.get(&environment.get_mode()) {
+      node.get_next(key).is_some()
+    } else {
+      false
+    }
+  }
+  
+  pub fn enter_key<E: Environment<M, F>>(&mut self, key: &K, environment: &E) -> Result<Option<Vec<&F>>, String> {
+    self.pressed.push(key.to_owned());
+    if self.current_node.is_none() {
+      self.current_node = self.tree.get(&environment.get_mode()).map(|node| node.to_owned());
+    }
+    let node = self.current_node.take().ok_or(&format!("No keybindings for mode: {:?}", environment.get_mode()))?;
+    if let Some(next) = node.get_next(key) { // next is none unless its set again
+
+      if next.next.is_none() {
+        self.pressed = Vec::new();
+        return self.get_functions(next.evaluate(&[])?, environment).map(|x| Some(x));
+      }
+      
+      self.current_node = Some(next); // set the next node
+
+    } else {
+      let msg = format!("Invalid key combination: {:?}, {:?}", self.pressed, key);
+      self.pressed = Vec::new();
+      return Err(msg);
+    }
+    
+    Ok(None)
+  }
+  
+  pub(crate) fn enter_key_terminate<E: EnvVariables>(&mut self, environment: &E) -> Result<Option<Vec<&F>>, String> {
+        let node = self.current_node.take().ok_or(format!("a node should be selected, probably no key entered"))?;
+        self.pressed = Vec::new();
+        return self.get_functions(node.evaluate(&[])?, environment).map(|x| Some(x));
+    }
 }
 
 
@@ -75,22 +94,51 @@ impl<K: Key> KeyMapNode<K> {
     Self { next: None, command: Some(command) }
   }
   fn new() -> Self {
-    Self { next: Some(HashMap::new()), command: None }
+    Self { next: None, command: None }
   }
   fn add(&mut self, key: K, node: KeyMapNode<K>) {
     self.next.as_mut().unwrap().insert(key, Box::new(node));
   }
   fn evaluate(&self, keys: &[K]) -> Result<&String, String> {
+    if keys.len() <= 0 {
+      return match self.command {
+        Some(ref c) => Ok(c),
+        None => Err(format!("no command {keys:?}")),
+      }
+    }
     if let Some(k) = &self.next {
-      return k.get(keys.first().ok_or(format!("keys should not be empty: {keys:?}"))?)
+      println!("keys: {keys:?}");
+      return k.get(keys.first().expect(&format!("should never happen: {keys:?} len bigger than 0 but first is none")))
       .ok_or(format!("key {keys:?} does not exist at this position in eval tree"))?
       .evaluate(&keys[1..]);
     }
-    match self.command {
-      Some(ref c) => Ok(c),
-      None => Err(format!("no command {keys:?}")),
-    }
+    Err(format!("no key at position in eval tree: {keys:?}"))
   }
+  
+  fn get_next(&self, key: &K) -> Option<KeyMapNode<K>> {
+        if let Some(ref node) = self.next { 
+          node.get(key).map(|n| *n.to_owned()) 
+        } else { None } 
+    }
+    
+    fn insert_raw_data(&mut self, raw_keys: &[String], raw_command: &str) {
+        if raw_keys.len() <= 0 {
+          self.command = Some(raw_command.to_owned());
+        } else {
+          let next = self.next.take();
+          let mut next = match next {
+            Some(next) => next,
+            None => HashMap::new(),
+          };
+          next.entry(K::from(raw_keys[0].clone()))
+          .and_modify(|node| node.insert_raw_data(&raw_keys[1..], raw_command))
+          .or_insert_with(|| {
+            let mut n = Box::new(KeyMapNode::new());
+            n.insert_raw_data(&raw_keys[1..], raw_command);
+            n});
+          self.next = Some(next);
+        }
+    }
 }
 
 impl<K: Key> From<CommandName> for KeyMapNode<K> {
@@ -102,12 +150,12 @@ impl<K: Key> From<CommandName> for KeyMapNode<K> {
 
 #[test]
 fn evaluate_evaluation_tree_test() {
-  let mut tree: EvaluationTree<KeyCode, FunctionString> = EvaluationTree::new();
+  let mut tree: EvaluationTree<Mode, KeyCode, FunctionString> = EvaluationTree::new();
   let mut node = KeyMapNode::new(); 
   let command = "command".to_owned();
   node.add(KeyCode::from("a"), command.into());
   tree.add(Mode::from("Normal"), node);
-  let c = tree.evaluate(&Mode::from("Normal"), &[KeyCode::from("a"), KeyCode::from("b")]);
+  let c = tree.evaluate(&[KeyCode::from("a"), KeyCode::from("b")], &environment::DefaultEnvironment::new()).unwrap();
   println!("{:?}", c);
 }
 

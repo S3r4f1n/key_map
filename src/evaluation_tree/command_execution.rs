@@ -1,5 +1,7 @@
 use std::collections::HashMap;
 
+use crate::environment::{EnvVariables};
+
 use super::{Function};
 use super::when_expression::Condition;
 
@@ -10,9 +12,9 @@ pub(crate) struct Command<F: Function> {
 }
 
 impl<F: Function> Command<F> {
-  pub(crate) fn execute<'a>(&'a self, conglomerates: &'a HashMap<CommandName, Command<F>>) -> Vec<&F> {
+  pub(crate) fn execute<'a, E: EnvVariables>(&'a self, conglomerates: &'a HashMap<CommandName, Command<F>>, environment: &E) -> Vec<&F> {
 
-    if self.condition.is_satisfied() {
+    if self.condition.is_satisfied(environment) {
       self.values.iter().map(|value| {
 
         match value {
@@ -20,7 +22,7 @@ impl<F: Function> Command<F> {
             let name = command_name.to_string();
             let conglomerate = conglomerates.get(&name)
             .ok_or("command not found. this should never appear, since during parsing such errors are caught").unwrap();
-            conglomerate.execute(conglomerates)
+            conglomerate.execute(conglomerates, environment)
           }
           FunctionOrCommandName::Function(function) => vec![function]
         }

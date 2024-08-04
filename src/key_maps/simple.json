@@ -1,1 +1,30 @@
-{}
+{
+  "commands": [
+    {
+      "name": "command_one",
+      "commands": ["function_one", "function_two"],
+      "when": "true",
+      "command_type": "FunctionSequence"
+    },
+    {
+      "name": "command_two",
+      "commands": ["function_one", "funky", "sub_command_one"],
+      "when": "true",
+      "command_type": "Mixed"
+    }
+  ],
+  "key_maps": [
+    {
+      "keys": ["c"],
+      "command": "sub_command_one"
+    },
+    {
+      "keys": ["d"],
+      "command": "sub_command_one"
+    },
+    {
+      "keys": ["a"],
+      "command": "sub_command_one"
+    }
+  ]
+}

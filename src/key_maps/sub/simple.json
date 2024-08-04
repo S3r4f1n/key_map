@@ -15,7 +15,11 @@
   ],
   "key_maps": [
     {
-      "keys": ["a"],
+      "keys": ["a", "b"],
+      "command": "sub_command_two"
+    },
+    {
+      "keys": ["b"],
       "command": "sub_command_two"
     }
   ]

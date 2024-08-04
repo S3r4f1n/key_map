@@ -165,5 +165,5 @@ fn parse_key_map_json_test() {
 #[test]
 fn keymapdata_from_path_test() {
   let data = key_map_data_from_path(Path::new("./src/key_maps"));
-  println!("{:?}", data);
+  println!("{:#?}", data);
 }
